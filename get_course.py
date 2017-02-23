@@ -24,8 +24,8 @@ def load(threadno):
 # main defs
 def initialize():
 	global driver,p,cursor_db,db
-	driver = [webdriver.Chrome("/Users/Martin-Bao/Documents/CourseSearch/chromedriver") for i in range(threads)]
-	# driver = [webdriver.PhantomJS("/Users/Martin-Bao/Documents/CourseSearch/phantomjs") for i in range(threads)]
+	# driver = [webdriver.Chrome("/Users/Martin-Bao/Documents/CourseSearch/chromedriver") for i in range(threads)]
+	driver = [webdriver.PhantomJS("/Users/Martin-Bao/Documents/CourseSearch/phantomjs") for i in range(threads)]
 	start_time = time.time()
 	p = [P(target=login,args=(i,)) for i in range(threads)]
 	[i.start() for i in p]
@@ -47,6 +47,7 @@ def login(threadno):
 	print("Thread "+str(threadno)+" Initialized Successfully",rtime(start_time))
 def update_dict(threadno=0):
 	start_time = time.time()
+	os.chdir("db_store")
 	d = driver[threadno]
 	os.remove('dict.db') if os.path.exists('dict.db') else None
 	open('dict.db','w').close()
@@ -76,38 +77,37 @@ def update_dict(threadno=0):
 	dict.close()
 	print("Dictionary Updated Successfully",rtime(start_time))
 def update_data(wipe_data=0):
-	global subjects,dict,cursor_dict,db,cursor_db
+	global subjects,dict,cursor_dict,db
 	start_time = time.time()
 	if wipe_data == 1:
-		
+		shutil.rmtree("db_subjects")
+		os.mkdir("db_subjects")
 	dict = sqlite3.Connection('dict.db')
 	cursor_dict = dict.cursor()
 	cursor_dict.execute("SELECT * FROM Main")
 	subjects = cursor_dict.fetchall()
-	for i in range(len(subjects)):
-		while sum([p[t].is_alive() for t in range(threads)]) == threads:
-			pass
-		for t in range(threads):
-			if not p[t].is_alive():
-				p[t] = P(target=update_subject,args=(i,t,interval,q))
-				p[t].start()
-				break
-	[p[t].join() for t in range(threads)]
-	while not q.empty():
-		pass
-	print("Database Updated Successfully",rtime(start_time))
-	db.close()
 	dict.close()
-	p1.terminate()
+	open('info.dat','w').write(gmt())
+	driver[0].find_element_by_id("NYU_CLS_DERIVED_NYU_CLS_YR_03$8$").text
+	for i in range(len(subjects)):
+		if not os.path.exists("/db_subjects/"+subjects[i][0]+".db"):
+			while sum([p[t].is_alive() for t in range(threads)]) == threads:
+				pass
+			for t in range(threads):
+				if not p[t].is_alive():
+					p[t] = P(target=update_subject,args=(i,t))
+					p[t].start()
+					break
+	[p[t].join() for t in range(threads)]
+	print("Database Updated Successfully",rtime(start_time))
 	quitall()
-def update_subject(i,threadno,interval,q):
+def update_subject(i,threadno):
+	global subjects
 	start_time = time.time()
-	while open("busy",'r').readline == "1":
-		pass
-	cursor_db.execute("SELECT update_time FROM Info WHERE course_code='"+subjects[i][0]+"'")
-	if not check_update(cursor_db.fetchone()[0],interval):
-		print(str(i+1)+"/"+str(len(subjects))+" Up to Date",rtime(start_time))
-		return
+	open("db_subjects/"+subjects[i][0]+".db",'w')
+	db = sqlite3.Connection("db_subjects/"+subjects[i][0]+".db")
+	cursor = db.cursor()
+	cursor.execute("CREATE TABLE Main (course_code,course_name,course_campus,course_terms,course_subject,course_description,course_more_info)")
 	d = driver[threadno]
 	load(threadno)
 	d.find_element_by_xpath("//*[text()[contains(.,'"+subjects[i][0]+"')]]").click()
@@ -140,14 +140,12 @@ def update_subject(i,threadno,interval,q):
 			c2 = c.find_element_by_xpath("tr[4]/td/div/table/tbody")
 			c2_0 = c2.find_element_by_xpath("tr[1]/td/div").text
 			course_terms = c2_0[c2_0.index("Terms Offered:")+15:].strip()
-			course_more_info = c2.find_element_by_xpath("tr[2]/td/table/tbody/tr[2]/td/div/table/tbody").text
-			q.put(("INSERT INTO Main VALUES(?,?,?,?,?,?,?)",[course_code,course_name,course_campus,course_terms,course_subject,course_description,course_more_info]))
+			cursor.execute("INSERT INTO Main VALUES(?,?,?,?,?,?,?)",[course_code,course_name,course_campus,course_terms,course_subject,course_description,c2.find_element_by_xpath("tr[2]/td/table/tbody/tr[2]/td/div/table/tbody").text])
 	d.find_element_by_id("NYU_CLS_DERIVED_BACK").click()
-	q.put(("UPDATE Info SET update_time = ? WHERE course_code='"+subjects[i][0]+"'",[gmt()]))
-	print(str(i+1)+"/"+str(len(subjects))+" Updated Successfully",rtime(start_time))
 	load(threadno)
+	print(subjects[i][0],"Updated Successfully",rtime(start_time))
 
 
 initialize()
-# update_dict()
+update_dict()
 update_data(1)
